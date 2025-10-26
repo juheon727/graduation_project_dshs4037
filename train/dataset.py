@@ -30,6 +30,7 @@ class FewShotKeypointTask:
                 f"  Support Images: {len(self.support_imgIds)}\n"
                 f"  Query Images: {len(self.query_imgIds)}\n"
                 f"  Keypoints Used: {len(self.keypoint_subset)}\n"
+                f"  Resolution: {self.resolution}\n"
                 f")")
 
     def get_images(self, support: bool = True) -> List[np.ndarray]:
@@ -71,7 +72,12 @@ class FewShotKeypointTask:
                 if ann['category_id'] not in self.keypoint_subset or 'keypoints' not in ann.keys():
                     continue
                 
-                keypoints_for_this_image[ann['category_id']] = ann['keypoints'][:2]
+                img_id = ann['image_id']
+                w_0 = self.coco.imgs[img_id]['width']
+                h_0 = self.coco.imgs[img_id]['height']
+                w_1 = self.resolution[0]
+                h_1 = self.resolution[1]
+                keypoints_for_this_image[ann['category_id']] = ann['keypoints'][:2] * np.array([w_1 / w_0, h_1 / h_0])
             
             ret.append(keypoints_for_this_image)
         
