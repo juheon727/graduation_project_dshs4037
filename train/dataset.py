@@ -3,20 +3,26 @@ import yaml
 import re
 import numpy as np
 import cv2
-from typing import List, Dict
+from typing import List, Dict, Any, Tuple
 from pycocotools.coco import COCO
+import torch
+from torch.utils.data import Dataset, DataLoader
 
 class FewShotKeypointTask:
     def __init__(self,
                  dataset_path: str,
                  support_imgIds: List[int],
                  query_imgIds: List[int],
-                 keypoint_subset: List[int]) -> None:
+                 keypoint_subset: List[int],
+                 resolution: Tuple[int, int],
+                 task_idx: str = "-1") -> None:
         self.support_imgIds = support_imgIds
         self.query_imgIds = query_imgIds
         self.keypoint_subset = keypoint_subset
         self.dataset_path = dataset_path
+        self.resolution = resolution
         self.coco = COCO(os.path.join(dataset_path, 'labels.json'))
+        self.task_idx = task_idx
 
     def __str__(self) -> str:
         return (f"FewShotKeypointTask(\n"
@@ -34,6 +40,7 @@ class FewShotKeypointTask:
         for metadata in img_metadatas:
             path = os.path.join(self.dataset_path, metadata['file_name'])
             img = cv2.imread(path)
+            img = cv2.resize(img, self.resolution)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             ret.append(img)
         
@@ -75,11 +82,13 @@ class FSKeypointDatasetBase:
                 path: str, 
                 n_shot: int = 5, 
                 n_query: int = 5,
-                use_keypoint_subsets: int = -1) -> None:
+                use_keypoint_subsets: int = -1,
+                resolution: Tuple[int, int] = (1920, 1080)) -> None:
         self.path = path
         self.n_shot = n_shot
         self.n_query = n_query
         self.use_keypoint_subsets = use_keypoint_subsets
+        self.resolution = resolution
 
         subdirectories = os.listdir(self.path)
         self.episode_numbers = [re.sub(r'^([^A-Za-z]*)[A-Za-z].*', r'\1', episode) for episode in subdirectories]
@@ -127,15 +136,164 @@ class FSKeypointDatasetBase:
             dataset_path=dataset_path,
             support_imgIds=support_imgIds,
             query_imgIds=query_imgIds,
-            keypoint_subset=keypoint_subset
+            keypoint_subset=keypoint_subset,
+            resolution=self.resolution,
+            task_idx=episode_number,
         )
+    
+class FSKeypointDataset(FSKeypointDatasetBase, Dataset):
+    def __init__(self,
+                 path: str,
+                 epoch_length: int = 1000,
+                 n_shot: int = 5,
+                 n_query: int = 5,
+                 use_keypoint_subsets: int = -1,
+                 resolution: Tuple[int, int] = (1920, 1080)) -> None:
+        
+        super().__init__(
+            path=path,
+            n_shot=n_shot,
+            n_query=n_query,
+            use_keypoint_subsets=use_keypoint_subsets,
+            resolution=resolution
+        )
+
+        self.epoch_length = epoch_length
+
+    def __len__(self) -> int:
+        return self.epoch_length
+    
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        """
+        Returns one complete few-shot task.
+        
+        Note: The 'idx' is ignored, as a new random task is sampled every time.
+        
+        Returns:
+            A dictionary containing the task data:
+            {
+                'support_images': List[np.ndarray],
+                'support_keypoints': List[Dict[int, np.ndarray]],
+                'query_images': List[np.ndarray],
+                'query_keypoints': List[Dict[int, np.ndarray]],
+                'keypoint_subset': List[int] (List of category IDs used),
+                'task_idx': str,
+            }
+        """
+        task = self.sample_random_task()
+
+        support_images = task.get_images(support=True)
+        support_keypoints = task.get_keypoints(support=True)
+        query_images = task.get_images(support=False)
+        query_keypoints = task.get_keypoints(support=False)
+        
+        return {
+            'support_images': support_images,
+            'support_keypoints': support_keypoints,
+            'query_images': query_images,
+            'query_keypoints': query_keypoints,
+            'keypoint_subset': task.keypoint_subset,
+            'task_idx': task.task_idx
+        }
+    
+class Collator:
+    def __init__(self, resolution: Tuple[int, int], sigma: float) -> None:
+        """
+        Initializer for the Collator class.
+        Args:
+            resolution (Tuple[int, int]): Desired image resolution as (width, height).
+            sigma (float): Standard deviation for Gaussian heatmap generation.
+
+        Returns:
+            None
+        """
+        self.resolution = resolution
+        self.sigma = sigma
+
+    def heatmap_from_coords(self, keypoints: Dict[int, np.ndarray]) -> np.ndarray:
+        w, h = self.resolution
+        #print(keypoints)
+        channels = []
+        for idx, coords in keypoints.items():
+            gauss_x = np.fromfunction(
+                function=lambda i, j: np.exp(-((j - coords[0]) ** 2) / (2 * self.sigma ** 2)),
+                shape=(1, w),
+                dtype=np.float32,
+            )
+
+            gauss_y = np.fromfunction(
+                function=lambda i, j: np.exp(-((i - coords[1]) ** 2) / (2 * self.sigma ** 2)),
+                shape=(h, 1),
+                dtype=np.float32,
+            )
+
+            heatmap = gauss_x * gauss_y
+            channels.append(heatmap)
+
+        return np.stack(channels, axis=0)
+
+    def __call__(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Collation function for batching few-shot keypoint data. Used for Pytorch DataLoader.
+
+        Args:
+            data (List[Dict[str, Any]]): A list of few-shot task dictionaries as returned by FSKeypointDataset.__getitem__.
+
+        Returns:
+            A dictionary containing batched tensors:
+            {
+                'support_images': Tensor of shape (batch_size * n_shot, 3, H, W),
+                'support_heatmaps': List of tensors of shape (n_shot, K_i, H, W),
+                'query_images': Tensor of shape (batch_size * n_query, 3, H, W),
+                'query_heatmaps': List of tensors of shape (n_query, K_i, H, W),
+                'task_indices': List of task indices,
+            }
+        """
+        support_images = []
+        support_heatmaps = []
+        query_images = []
+        query_heatmaps = []
+        task_indices = []
+        for episode in data:
+            #print(episode['task_idx'])
+            support_images_sample = episode['support_images'] # List of np.ndarray of shape (H, W, 3)
+            support_images.extend(support_images_sample)
+
+            query_images_sample = episode['query_images'] # List of np.ndarray of shape (H, W, 3)
+            query_images.extend(query_images_sample)
+
+            support_heatmaps_episode = []
+            for support_kp in episode['support_keypoints']:
+                heatmap = self.heatmap_from_coords(keypoints=support_kp)
+                support_heatmaps_episode.append(heatmap)
+                #print(heatmap.shape)
+            support_heatmaps.append(torch.tensor(np.stack(support_heatmaps_episode, axis=0)))
+
+            query_heatmaps_episode = []
+            for query_kp in episode['query_keypoints']:
+                heatmap = self.heatmap_from_coords(keypoints=query_kp)
+                query_heatmaps_episode.append(heatmap)
+            query_heatmaps.append(torch.tensor(np.stack(query_heatmaps_episode, axis=0)))
+
+            task_indices.append(episode['task_idx'])
+
+        support_images = torch.tensor(np.stack(support_images, axis=0)).permute(0, 3, 1, 2)  # (B*n_shot, 3, H, W)
+        query_images = torch.tensor(np.stack(query_images, axis=0)).permute(0, 3, 1, 2)      # (B*n_query, 3, H, W)
+
+        return {
+            'support_images': support_images,
+            'support_heatmaps': support_heatmaps,
+            'query_images': query_images,
+            'query_heatmaps': query_heatmaps,
+            'task_indices': task_indices,
+        }
 
 if __name__ == '__main__':
     with open('config.yaml', 'r') as stream:
         config = yaml.safe_load(stream)
         config = config['train']
     
-    dataset_base = FSKeypointDatasetBase(
+    '''dataset_base = FSKeypointDatasetBase(
         path=config.get(
             'dataset_dir', 
             '/home/juheon727/lets_fucking_graduate/dataset/datasetv1/'
@@ -148,4 +306,35 @@ if __name__ == '__main__':
     task = dataset_base.sample_random_task()
 
     print(dataset_base)
-    print(task)
+    print(task)'''
+
+    dataset = FSKeypointDataset(
+        path=config.get(
+            'dataset_dir', 
+            '/home/juheon727/lets_fucking_graduate/dataset/datasetv1/'
+        ),
+        n_shot=10,
+        n_query=3,
+        use_keypoint_subsets=-1,
+        resolution=(448, 448),
+    )
+
+    dataloader = DataLoader(
+        dataset=dataset,
+        batch_size=32,
+        collate_fn=Collator(
+            resolution=(448, 448),
+            sigma=8.0
+        ),
+        shuffle=True,
+    )
+
+    for idx, batch in enumerate(dataloader):
+        print(f"Batch {idx}:")
+        print(f"  Task Indices: {batch['task_indices']}")
+        print(f"  Support Images Shape: {batch['support_images'].shape}")
+        print(f"  Query Images Shape: {batch['query_images'].shape}")
+        print(f"  Support Heatmaps Length: {len(batch['support_heatmaps'])}")
+        print(f"  Query Heatmaps Length: {len(batch['query_heatmaps'])}")
+        
+        break
