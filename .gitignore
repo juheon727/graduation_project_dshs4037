@@ -1,0 +1,4 @@
+trash/
+!dataset/downloader.py
+dataset/dataset_files
+env/

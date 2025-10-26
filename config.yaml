@@ -1,0 +1,32 @@
+dataset:
+  urls:
+    - "https://www.youtube.com/watch?v=FVJyEyIy4h0"
+    - "https://www.youtube.com/watch?v=VGXwh1hxxFw"
+    - "https://www.youtube.com/watch?v=ZIlNQQ7OHfM"
+    
+    - "https://www.youtube.com/watch?v=-Xpl_dyYhVY"
+    - "https://www.youtube.com/watch?v=6BX6cd7IHh0"
+    - "https://www.youtube.com/watch?v=5lu1XCsvVX4"
+    - "https://www.youtube.com/watch?v=mQLmi8mfr5M"
+    - "https://www.youtube.com/watch?v=NZPoy9WyINo"
+    - "https://www.youtube.com/watch?v=SLDU_NlEJ_4"
+    - "https://www.youtube.com/watch?v=fZicyIsxg3s"
+    - "https://www.youtube.com/watch?v=WiemxfGW-LU"
+    - "https://www.youtube.com/watch?v=WAv3GkNTg7M"
+    - "https://www.youtube.com/watch?v=HivIpWfF22E"
+    - "https://www.youtube.com/watch?v=6IvXIOyC5qM"
+    - "https://www.youtube.com/watch?v=kaOITwCLU10"
+    - "https://www.youtube.com/watch?v=C1opZp_Xnk4"
+    - "https://www.youtube.com/watch?v=IGnGE2MWP_8"
+    - "https://www.youtube.com/watch?v=VslaxGrXgp0"
+    - "https://www.youtube.com/watch?v=UWZzwcw9vA4"
+    - "https://www.youtube.com/watch?v=hIXTbX-lQgY"
+    - "https://www.youtube.com/watch?v=G_Cn4YhzHh0"
+    - "https://www.youtube.com/watch?v=Q8hwVpE6knM"
+    - "https://www.youtube.com/watch?v=opdrNUjeGms"
+    - "https://www.youtube.com/watch?v=7UC5AHXMgNg"
+  output_dir: /home/juheon727/lets_fucking_graduate/dataset/episodes2/
+  num_frames: 200
+
+train:
+  dataset_dir: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/
