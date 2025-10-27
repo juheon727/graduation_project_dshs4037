@@ -28,12 +28,13 @@ dataset:
   num_frames: 200
 
 train:
-  dataset_dir: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/
+  dataset_dir_train: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/train/
+  dataset_dir_val: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/val/
   heatmap_sigma: 5.0
   resolution: [448, 448]
   n_shot: 10
   n_query: 3
-  batch_size: 10
+  batch_size: 8
   use_keypoint_subsets: 8
   main_steps: 1000
   main_lr: 1.0e-4
@@ -43,3 +44,5 @@ train:
   adapt_betas: [0.9, 0.999]
   num_workers: 8
   accelerator: auto
+  precision: bf16-mixed
+  val_steps: 16

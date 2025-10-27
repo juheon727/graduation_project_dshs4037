@@ -163,6 +163,8 @@ class LitModule(L.LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int) -> Tensor:
         """
+        Performs a training step and calculates the query loss on the bathc.
+
         Args:
             batch (Any): A dictionary containing batched tensors:
                 {
@@ -205,7 +207,6 @@ class LitModule(L.LightningModule):
         )
 
         ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # GB
-        print(ram_usage)
         self.log('utilization/ram_gb', ram_usage, on_step=True, on_epoch=False, prog_bar=False, logger=True)
 
         if torch.cuda.is_available():
@@ -218,6 +219,57 @@ class LitModule(L.LightningModule):
 
         return loss
     
+    def validation_step(self, batch: Any, batch_idx: int) -> Tensor:
+        """
+        Performs a validation step on the batch and calculates the query loss
+
+        Args:
+            batch (Any): A dictionary containing batched tensors:
+                {
+                    'support_images': Tensor of shape (batch_size * n_shot, 3, H, W),
+                    'support_heatmaps': List of tensors of shape (n_shot, K_i, H, W),
+                    'query_images': Tensor of shape (batch_size * n_query, 3, H, W),
+                    'query_heatmaps': List of tensors of shape (n_query, K_i, H, W),
+                    'n_keypoints': List of number of keypoints for each task,
+                    'task_indices': List of task indices,
+                }
+            
+            batch_idx (int): Current index of the batch
+
+        Returns:
+            loss (Tensor): Loss function value for the query set.
+        """
+        with torch.no_grad():
+            support_images = batch['support_images']
+            support_heatmaps = batch['support_heatmaps']
+            query_images = batch['query_images']
+            query_heatmaps = batch['query_heatmaps']
+            n_keypoints = batch['n_keypoints']
+
+            multireg = MultiRegHead(in_channels=self.feature_channels, n_keypoints=n_keypoints)
+            if (self.accelerator == 'auto' and torch.cuda.is_available()) or self.accelerator == 'gpu':
+                multireg.cuda()
+            support_features = self.feature_model(support_images)
+            query_features = self.feature_model(query_images)
+
+            with torch.enable_grad():
+                multireg.adapt(
+                    support_features=support_features,
+                    support_heatmaps=support_heatmaps,
+                    optim_lr=self.adapt_lr,
+                    optim_steps=self.adapt_steps,
+                    optim_betas=self.adapt_betas,
+                )
+
+            loss = multireg.calculate_loss(
+                query_features=query_features,
+                query_heatmaps=query_heatmaps,
+            )
+
+            self.log('val/loss', loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+        
+            return loss
+
 class PipelineTestModel(nn.Module):
     def __init__(self) -> None:
         """
@@ -279,6 +331,7 @@ if __name__ == '__main__':
         devices=cfg.get('devices', 1),
         logger=wandb_logger,
         log_every_n_steps=1,
+        precision=cfg.get('precision', 'bf16-mixed')
     )
 
     trainer.fit(model=lightning_module, train_dataloaders=dataloader)
