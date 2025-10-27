@@ -5,12 +5,15 @@ import numpy as np
 import cv2
 from typing import List, Dict, Any, Tuple
 from pycocotools.coco import COCO
+import sys
+from contextlib import redirect_stdout, redirect_stderr, contextmanager
 import torch
 from torch.utils.data import Dataset, DataLoader
 
 class FewShotKeypointTask:
     def __init__(self,
                  dataset_path: str,
+                 coco: COCO,
                  support_imgIds: List[int],
                  query_imgIds: List[int],
                  keypoint_subset: List[int],
@@ -21,7 +24,7 @@ class FewShotKeypointTask:
         self.keypoint_subset = keypoint_subset
         self.dataset_path = dataset_path
         self.resolution = resolution
-        self.coco = COCO(os.path.join(dataset_path, 'labels.json'))
+        self.coco = coco
         self.task_idx = task_idx
 
     def __str__(self) -> str:
@@ -138,8 +141,12 @@ class FSKeypointDatasetBase:
             subset_size = np.random.randint(min(self.use_keypoint_subsets, len(all_keypoints)), len(all_keypoints) + 1)
             keypoint_subset = sorted(np.random.choice(all_keypoints, subset_size, replace=False))
 
+        with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+            coco = COCO(os.path.join(dataset_path, 'labels.json'), disable_print=True)
+
         return FewShotKeypointTask(
             dataset_path=dataset_path,
+            coco=coco,
             support_imgIds=support_imgIds,
             query_imgIds=query_imgIds,
             keypoint_subset=keypoint_subset,
@@ -221,17 +228,11 @@ class Collator:
         #print(keypoints)
         channels = []
         for idx, coords in keypoints.items():
-            gauss_x = np.fromfunction(
-                function=lambda i, j: np.exp(-((j - coords[0]) ** 2) / (2 * self.sigma ** 2)),
-                shape=(1, w),
-                dtype=np.float32,
-            )
+            gauss_x = np.arange(w).reshape(1, w) - coords[0]
+            gauss_x = np.exp(-(gauss_x ** 2) / (2 * self.sigma ** 2))
 
-            gauss_y = np.fromfunction(
-                function=lambda i, j: np.exp(-((i - coords[1]) ** 2) / (2 * self.sigma ** 2)),
-                shape=(h, 1),
-                dtype=np.float32,
-            )
+            gauss_y = np.arange(h).reshape(h, 1) - coords[1]
+            gauss_y = np.exp(-(gauss_y ** 2) / (2 * self.sigma ** 2))
 
             heatmap = gauss_x * gauss_y
             channels.append(heatmap)
@@ -298,21 +299,6 @@ if __name__ == '__main__':
     with open('config.yaml', 'r') as stream:
         config = yaml.safe_load(stream)
         config = config['train']
-    
-    '''dataset_base = FSKeypointDatasetBase(
-        path=config.get(
-            'dataset_dir', 
-            '/home/juheon727/lets_fucking_graduate/dataset/datasetv1/'
-        ),
-        n_shot=10,
-        n_query=5,
-        use_keypoint_subsets=8
-    )
-
-    task = dataset_base.sample_random_task()
-
-    print(dataset_base)
-    print(task)'''
 
     dataset = FSKeypointDataset(
         path=config.get(

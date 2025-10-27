@@ -3,7 +3,6 @@ dataset:
     - "https://www.youtube.com/watch?v=FVJyEyIy4h0"
     - "https://www.youtube.com/watch?v=VGXwh1hxxFw"
     - "https://www.youtube.com/watch?v=ZIlNQQ7OHfM"
-    
     - "https://www.youtube.com/watch?v=-Xpl_dyYhVY"
     - "https://www.youtube.com/watch?v=6BX6cd7IHh0"
     - "https://www.youtube.com/watch?v=5lu1XCsvVX4"
@@ -30,3 +29,10 @@ dataset:
 
 train:
   dataset_dir: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/
+  heatmap_sigma: 5.0
+  resolution: [448, 448]
+  n_shot: 10
+  n_query: 3
+  batch_size: 16
+  use_keypoint_subsets: 8
+  steps: 1000

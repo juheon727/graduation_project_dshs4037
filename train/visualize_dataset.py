@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 import torch
 
-from dataset import FSKeypointDataset, Collator
+from train.dataset import FSKeypointDataset, Collator
 
 
 def _to_uint8_rgb(img_tensor: torch.Tensor) -> np.ndarray:
@@ -126,14 +126,8 @@ def main():
     parser = argparse.ArgumentParser(description="Create sample heatmap overlays for a batch.")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--outdir", type=str, default="./visualizations", help="Directory to save overlays")
-    parser.add_argument("--resolution", type=int, nargs=2, default=[448, 448], metavar=("W", "H"))
-    parser.add_argument("--sigma", type=float, default=8.0, help="Gaussian sigma for heatmaps")
-    parser.add_argument("--n-shot", type=int, default=10, dest="n_shot")
-    parser.add_argument("--n-query", type=int, default=3, dest="n_query")
-    parser.add_argument("--batch-size", type=int, default=8, dest="batch_size")
     parser.add_argument("--num-support", type=int, default=8, help="Max support overlays to save")
     parser.add_argument("--num-query", type=int, default=8, help="Max query overlays to save")
-    parser.add_argument("--use-keypoint-subsets", type=int, default=-1, dest="use_keypoint_subsets")
     parser.add_argument("--seed", type=int, default=17, help="Random seed for reproducibility")
     args = parser.parse_args()
 
@@ -149,30 +143,37 @@ def main():
     else:
         cfg_train = {}
 
+    n_shot = cfg_train.get("n_shot", 10)
+    n_query = cfg_train.get("n_query", 3)
+    batch_size = cfg_train.get("batch_size", 16)
+    use_keypoint_subsets = cfg_train.get("use_keypoint_subsets", -1)
+    resolution = cfg_train.get("resolution", [448, 448])
+    sigma = cfg_train.get("heatmap_sigma", 5.0)
+
     dataset_dir = cfg_train.get(
         "dataset_dir",
         "/home/juheon727/lets_fucking_graduate/dataset/datasetv1/",
     )
 
-    w, h = int(args.resolution[0]), int(args.resolution[1])
+    w, h = int(resolution[0]), int(resolution[1])
 
     dataset = FSKeypointDataset(
         path=dataset_dir,
         epoch_length=1000,
-        n_shot=args.n_shot,
-        n_query=args.n_query,
-        use_keypoint_subsets=args.use_keypoint_subsets,
+        n_shot=n_shot,
+        n_query=n_query,
+        use_keypoint_subsets=use_keypoint_subsets,
         resolution=(w, h),
     )
 
     collate = Collator(
         resolution=(w, h),
-        sigma=float(args.sigma),
+        sigma=float(sigma),
     )
 
     loader = torch.utils.data.DataLoader(
         dataset=dataset,
-        batch_size=int(args.batch_size),
+        batch_size=int(batch_size),
         collate_fn=collate,
         shuffle=True,
         num_workers=0,  # keep simple/portable; increase if desired
