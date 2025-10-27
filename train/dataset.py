@@ -290,7 +290,9 @@ class Collator:
             task_indices.append(episode['task_idx'])
 
         support_images = torch.tensor(np.stack(support_images, axis=0)).permute(0, 3, 1, 2)  # (B*n_shot, 3, H, W)
+        support_images = support_images / 255.0
         query_images = torch.tensor(np.stack(query_images, axis=0)).permute(0, 3, 1, 2)      # (B*n_query, 3, H, W)
+        query_images = query_images / 255.0
 
         return {
             'support_images': support_images,

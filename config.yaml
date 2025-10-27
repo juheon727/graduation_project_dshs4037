@@ -33,13 +33,13 @@ train:
   resolution: [448, 448]
   n_shot: 10
   n_query: 3
-  batch_size: 16
+  batch_size: 32
   use_keypoint_subsets: 8
   main_steps: 100
-  batch_size: 8
   main_lr: 1.0e-4
   main_betas: [0.9, 0.999]
   adapt_lr: 1.0e-3
   adapt_steps: 5
   adapt_betas: [0.9, 0.999]
   num_workers: 16
+  accelerator: auto

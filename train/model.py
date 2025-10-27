@@ -22,8 +22,8 @@ def kl_loss(pred: Tensor, gt: Tensor, eps: float = 1e-8) -> Tensor:
         loss (Tensor): A scalar loss value.
     """
     n, k, h, w = pred.shape
-    pred = pred.view(n*k, h*w)
-    gt = gt.view(n*k, h*w)
+    pred = pred.reshape(n*k, h*w)
+    gt = gt.reshape(n*k, h*w)
     pred = F.log_softmax(pred, dim=1)
     gt = gt / gt.sum(dim=1, keepdim=True).clamp(min=eps)
     loss = F.kl_div(pred, gt, reduction='batchmean')
@@ -70,13 +70,14 @@ class HeatmapRegressor(nn.Module):
                 optimizer.zero_grad()
                 support_pred = self(support_features)
                 loss = kl_loss(support_pred, support_heatmaps)
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
 
-class MultiRegHead:
+class MultiRegHead(nn.Module):
     def __init__(self,
                  in_channels: int,
                  n_keypoints: List[int]) -> None:
+        super().__init__()
         self.batch_size = len(n_keypoints)
         self.n_keypoints = n_keypoints
         self.regressors = nn.ModuleList([HeatmapRegressor(
@@ -137,8 +138,12 @@ class LitModule(L.LightningModule):
                  main_betas: Tuple[float, float],
                  adapt_lr: float,
                  adapt_steps: int,
-                 adapt_betas: Tuple[float, float]) -> None:
+                 adapt_betas: Tuple[float, float],
+                 accelerator: str = 'auto') -> None:
         super().__init__()
+
+        self.accelerator = accelerator
+
         self.feature_model = feature_model
         self.feature_channels = feature_channels
 
@@ -180,6 +185,8 @@ class LitModule(L.LightningModule):
         query_features = self.feature_model(query_images)
 
         multireg = MultiRegHead(in_channels=self.feature_channels, n_keypoints=n_keypoints)
+        if (self.accelerator == 'auto' and torch.cuda.is_available()) or self.accelerator == 'gpu':
+            multireg.cuda()
         multireg.adapt(
             support_features=support_features,
             support_heatmaps=support_heatmaps,
@@ -201,7 +208,7 @@ class PipelineTestModel(nn.Module):
             None
         """
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv(x)
@@ -224,5 +231,34 @@ if __name__ == '__main__':
         dataset=dataset,
         batch_size=cfg.get('batch_size', 1),
         shuffle=False,
-        num_workers=
-    )    
+        num_workers=cfg.get('num_workers', 1),
+        collate_fn=Collator(
+            resolution=cfg.get('resolution', (224, 224)), 
+            sigma=cfg.get('heatmap_sigma', 5.0)
+        ),
+        drop_last=True,
+    )
+
+    print(cfg)
+
+    feature_model = PipelineTestModel()
+    feature_channels = 32
+
+    lightning_module = LitModule(
+        feature_model=feature_model,
+        feature_channels=feature_channels,
+        main_lr=cfg.get('main_lr', 1e-4),
+        main_betas=tuple(cfg.get('main_betas', [0.9, 0.999])),
+        adapt_lr=cfg.get('adapt_lr', 1e-3),
+        adapt_steps=cfg.get('adapt_steps', 5),
+        adapt_betas=tuple(cfg.get('adapt_betas', [0.9, 0.999]))
+    )
+
+    trainer = Trainer(
+        max_epochs=1,
+        accelerator=cfg.get('accelerator', 'auto'),
+        devices=cfg.get('devices', 1),
+        logger=True,
+    )
+
+    trainer.fit(model=lightning_module, train_dataloaders=dataloader)
