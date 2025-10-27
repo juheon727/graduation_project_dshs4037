@@ -1,18 +1,25 @@
 from train.model import PipelineTestModel, LitModule
 from train.dataset import FSKeypointDataset, Collator
-from typing import Any, Tuple, List
+from train.architectures import ResNet50Deeplabv3p
+from typing import Any, Tuple, List, Dict
 import yaml
 from lightning.pytorch import Trainer, LightningModule
 from lightning.pytorch.loggers import WandbLogger
 from lightning.pytorch.callbacks import Callback
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 
-if __name__ == '__main__':
-    with open('config.yaml', 'r') as f:
-        cfg = yaml.safe_load(f)['train']
+def load_model(model: str, **kwargs) -> nn.Module:
+    models = {
+        'pipeline_test': PipelineTestModel,
+        'resnet50_deeplabv3+': ResNet50Deeplabv3p
+    }
 
-    dataset = FSKeypointDataset(
+    return models.get(model, PipelineTestModel)(**kwargs)
+
+def initialize_datasets(cfg: Dict[str, Any]) -> Any:
+    train_dataset = FSKeypointDataset(
         path=cfg.get('dataset_dir_train', None),
         epoch_length=cfg.get('main_steps', 10),
         n_shot=cfg.get('n_shot', 5),
@@ -21,8 +28,8 @@ if __name__ == '__main__':
         resolution=cfg.get('resolution', (224, 224)),
     )
 
-    dataloader = DataLoader(
-        dataset=dataset,
+    train_dataloader = DataLoader(
+        dataset=train_dataset,
         batch_size=cfg.get('batch_size', 1),
         shuffle=False,
         num_workers=cfg.get('num_workers', 1),
@@ -54,10 +61,16 @@ if __name__ == '__main__':
         drop_last=True,
     )
 
-    print(cfg)
+    return train_dataloader, val_dataloader
 
-    feature_model = PipelineTestModel()
-    feature_channels = 32
+if __name__ == '__main__':
+    with open('config.yaml', 'r') as f:
+        cfg = yaml.safe_load(f)['train']
+
+    train_dataloader, val_dataloader = initialize_datasets(cfg)
+
+    feature_model = load_model(model=cfg.get('model', None), **cfg.get('model_kwargs', {}))
+    feature_channels = cfg.get('feature_channels', 32)
 
     lightning_module = LitModule(
         feature_model=feature_model,
@@ -78,10 +91,9 @@ if __name__ == '__main__':
         log_every_n_steps=1,
         precision=cfg.get('precision', 'bf16-mixed'),
         check_val_every_n_epoch=None,
-        val_check_interval=10,
-        num_sanity_val_steps=0,
+        val_check_interval=cfg.get('val_interval', 10),
     )
 
     trainer.fit(model=lightning_module, 
-                train_dataloaders=dataloader, 
+                train_dataloaders=train_dataloader, 
                 val_dataloaders=[val_dataloader])

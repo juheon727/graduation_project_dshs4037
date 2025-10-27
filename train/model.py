@@ -74,6 +74,7 @@ class HeatmapRegressor(nn.Module):
                 loss = kl_loss(support_pred, support_heatmaps)
                 loss.backward(retain_graph=True)
                 optimizer.step()
+            torch.cuda.empty_cache()
 
 class MultiRegHead(nn.Module):
     def __init__(self,

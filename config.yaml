@@ -34,7 +34,7 @@ train:
   resolution: [448, 448]
   n_shot: 10
   n_query: 3
-  batch_size: 8
+  batch_size: 1
   use_keypoint_subsets: 8
   main_steps: 1000
   main_lr: 1.0e-4
@@ -42,7 +42,10 @@ train:
   adapt_lr: 1.0e-3
   adapt_steps: 5
   adapt_betas: [0.9, 0.999]
-  num_workers: 8
+  num_workers: 16
   accelerator: auto
   precision: bf16-mixed
   val_steps: 16
+  val_interval: 10
+  model: resnet50_deeplabv3+
+  feature_channels: 256
