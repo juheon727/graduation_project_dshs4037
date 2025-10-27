@@ -70,9 +70,9 @@ class HeatmapRegressor(nn.Module):
             self.train()
             for _ in range(optim_steps):
                 optimizer.zero_grad()
-                support_pred = self(support_features)
+                support_pred = self.conv(support_features)
                 loss = kl_loss(support_pred, support_heatmaps)
-                loss.backward(retain_graph=True)
+                loss.backward(retain_graph=False)
                 optimizer.step()
             torch.cuda.empty_cache()
 
@@ -188,8 +188,8 @@ class LitModule(L.LightningModule):
         query_heatmaps = batch['query_heatmaps']
         n_keypoints = batch['n_keypoints']
 
-        support_features = self.feature_model(support_images)
-        query_features = self.feature_model(query_images)
+        with torch.no_grad():
+            support_features = self.feature_model(support_images)
 
         multireg = MultiRegHead(in_channels=self.feature_channels, n_keypoints=n_keypoints)
         if (self.accelerator == 'auto' and torch.cuda.is_available()) or self.accelerator == 'gpu':
@@ -202,6 +202,7 @@ class LitModule(L.LightningModule):
             optim_betas=self.adapt_betas,
         )
 
+        query_features = self.feature_model(query_images)
         loss = multireg.calculate_loss(
             query_features=query_features,
             query_heatmaps=query_heatmaps,
@@ -279,7 +280,7 @@ class PipelineTestModel(nn.Module):
             None
         """
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
+        self.conv = nn.Conv2d(in_channels=3, out_channels=256, kernel_size=3, padding=1)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.conv(x)
@@ -313,7 +314,7 @@ if __name__ == '__main__':
     print(cfg)
 
     feature_model = PipelineTestModel()
-    feature_channels = 32
+    feature_channels = 256
 
     lightning_module = LitModule(
         feature_model=feature_model,

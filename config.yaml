@@ -30,22 +30,23 @@ dataset:
 train:
   dataset_dir_train: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/train/
   dataset_dir_val: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/val/
-  heatmap_sigma: 5.0
+  heatmap_sigma: 10.0
   resolution: [448, 448]
   n_shot: 10
   n_query: 3
-  batch_size: 1
+  batch_size: 2
   use_keypoint_subsets: 8
   main_steps: 1000
-  main_lr: 1.0e-4
+  main_lr: 1.0e-3
   main_betas: [0.9, 0.999]
   adapt_lr: 1.0e-3
-  adapt_steps: 5
+  adapt_steps: 20
   adapt_betas: [0.9, 0.999]
   num_workers: 16
   accelerator: auto
   precision: bf16-mixed
   val_steps: 16
-  val_interval: 10
+  val_interval: 64
   model: resnet50_deeplabv3+
   feature_channels: 256
+  accumulate_grad_batches: 4

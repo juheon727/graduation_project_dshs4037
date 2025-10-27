@@ -92,6 +92,7 @@ if __name__ == '__main__':
         precision=cfg.get('precision', 'bf16-mixed'),
         check_val_every_n_epoch=None,
         val_check_interval=cfg.get('val_interval', 10),
+        accumulate_grad_batches=cfg.get('accumulate_grad_batches', 1)
     )
 
     trainer.fit(model=lightning_module, 
