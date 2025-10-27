@@ -4,3 +4,4 @@ dataset/dataset_files
 env/
 visualizations/
 lightning_logs/
+wandb/

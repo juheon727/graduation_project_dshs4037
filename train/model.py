@@ -6,6 +6,7 @@ from torch.optim import SGD, Adam, Optimizer
 from torch import Tensor
 import lightning as L
 from lightning.pytorch import Trainer
+from lightning.pytorch.loggers import WandbLogger
 from typing import Any, Tuple, List
 import yaml
 from train.dataset import FSKeypointDataset, Collator
@@ -142,8 +143,6 @@ class LitModule(L.LightningModule):
                  accelerator: str = 'auto') -> None:
         super().__init__()
 
-        self.accelerator = accelerator
-
         self.feature_model = feature_model
         self.feature_channels = feature_channels
 
@@ -152,6 +151,10 @@ class LitModule(L.LightningModule):
         self.adapt_lr = adapt_lr
         self.adapt_steps = adapt_steps
         self.adapt_betas = adapt_betas
+
+        self.save_hyperparameters(ignore=['feature_model'])
+
+        self.accelerator = accelerator
 
     def configure_optimizers(self) -> Optimizer:
         optimizer = Adam(self.feature_model.parameters(), lr=self.main_lr, betas=self.main_betas)
@@ -195,10 +198,14 @@ class LitModule(L.LightningModule):
             optim_betas=self.adapt_betas,
         )
 
-        return multireg.calculate_loss(
+        loss = multireg.calculate_loss(
             query_features=query_features,
             query_heatmaps=query_heatmaps,
         )
+
+        self.log('train/loss', loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+
+        return loss
     
 class PipelineTestModel(nn.Module):
     def __init__(self) -> None:
@@ -254,11 +261,13 @@ if __name__ == '__main__':
         adapt_betas=tuple(cfg.get('adapt_betas', [0.9, 0.999]))
     )
 
+    wandb_logger = WandbLogger(project="graduation_project", log_model="all")
     trainer = Trainer(
         max_epochs=1,
         accelerator=cfg.get('accelerator', 'auto'),
         devices=cfg.get('devices', 1),
-        logger=True,
+        logger=wandb_logger,
+        log_every_n_steps=1,
     )
 
     trainer.fit(model=lightning_module, train_dataloaders=dataloader)
