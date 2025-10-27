@@ -125,7 +125,8 @@ class FSKeypointDatasetBase:
         chosen_subdir = np.random.choice(subdirs)
         dataset_path = os.path.join(self.path, chosen_subdir)
 
-        coco = COCO(os.path.join(dataset_path, 'labels.json'))
+        with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+            coco = COCO(os.path.join(dataset_path, 'labels.json'))
         all_img_ids = coco.getImgIds()
         np.random.shuffle(all_img_ids)
 
@@ -142,7 +143,7 @@ class FSKeypointDatasetBase:
             keypoint_subset = sorted(np.random.choice(all_keypoints, subset_size, replace=False))
 
         with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
-            coco = COCO(os.path.join(dataset_path, 'labels.json'), disable_print=True)
+            coco = COCO(os.path.join(dataset_path, 'labels.json'))
 
         return FewShotKeypointTask(
             dataset_path=dataset_path,
@@ -253,6 +254,7 @@ class Collator:
                 'support_heatmaps': List of tensors of shape (n_shot, K_i, H, W),
                 'query_images': Tensor of shape (batch_size * n_query, 3, H, W),
                 'query_heatmaps': List of tensors of shape (n_query, K_i, H, W),
+                'n_keypoints': List of number of keypoints for each task,
                 'task_indices': List of task indices,
             }
         """
@@ -260,6 +262,7 @@ class Collator:
         support_heatmaps = []
         query_images = []
         query_heatmaps = []
+        n_keypoints = []
         task_indices = []
         for episode in data:
             #print(episode['task_idx'])
@@ -282,6 +285,8 @@ class Collator:
                 query_heatmaps_episode.append(heatmap)
             query_heatmaps.append(torch.tensor(np.stack(query_heatmaps_episode, axis=0)))
 
+            n_keypoints.append(len(episode['keypoint_subset']))
+
             task_indices.append(episode['task_idx'])
 
         support_images = torch.tensor(np.stack(support_images, axis=0)).permute(0, 3, 1, 2)  # (B*n_shot, 3, H, W)
@@ -292,6 +297,7 @@ class Collator:
             'support_heatmaps': support_heatmaps,
             'query_images': query_images,
             'query_heatmaps': query_heatmaps,
+            'n_keypoints': n_keypoints,
             'task_indices': task_indices,
         }
 
@@ -324,6 +330,7 @@ if __name__ == '__main__':
     for idx, batch in enumerate(dataloader):
         print(f"Batch {idx}:")
         print(f"  Task Indices: {batch['task_indices']}")
+        print(f"  Number of Tasks: {len(batch['task_indices'])}")
         print(f"  Support Images Shape: {batch['support_images'].shape}")
         print(f"  Query Images Shape: {batch['query_images'].shape}")
         print(f"  Support Heatmaps Length: {len(batch['support_heatmaps'])}")
