@@ -40,16 +40,21 @@ class HeatmapRegressor(nn.Module):
             out_channels (int): Number of output channels.
         """
         super().__init__()
-        self.conv = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=in_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(num_features=in_channels)
+        self.conv2 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1)
         self._init_weights()
 
     def _init_weights(self):
-        nn.init.kaiming_normal_(self.conv.weight, mode='fan_out', nonlinearity='relu')
-        if self.conv.bias is not None:
-            nn.init.constant_(self.conv.bias, 0.0)
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0.0)
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.conv(x)
+        x = torch.relu(self.bn(self.conv1(x)))
+        return self.conv2(x)
     
     def adapt(self, 
               support_features: Tensor, 
@@ -70,7 +75,7 @@ class HeatmapRegressor(nn.Module):
             self.train()
             for _ in range(optim_steps):
                 optimizer.zero_grad()
-                support_pred = self.conv(support_features)
+                support_pred = self(support_features)
                 loss = kl_loss(support_pred, support_heatmaps)
                 loss.backward(retain_graph=False)
                 optimizer.step()
