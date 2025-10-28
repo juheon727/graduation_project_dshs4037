@@ -151,7 +151,7 @@ def main():
     sigma = cfg_train.get("heatmap_sigma", 5.0)
 
     dataset_dir = cfg_train.get(
-        "dataset_dir",
+        "dataset_dir_train",
         "/home/juheon727/lets_fucking_graduate/dataset/datasetv1/",
     )
 

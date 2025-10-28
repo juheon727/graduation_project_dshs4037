@@ -36,12 +36,12 @@ train:
   n_query: 4
   batch_size: 2
   use_keypoint_subsets: 8
-  main_steps: 1000
+  main_steps: 5000
   main_lr: 1.0e-3
   main_betas: [0.9, 0.999]
-  adapt_lr: 1.0e-3
-  adapt_steps: 5
-  adapt_betas: [0.9, 0.999]
+  adapt_lr: 1.0e-1
+  adapt_steps: 10
+  adapt_betas: [0.8, 0.99]
   num_workers: 16
   accelerator: auto
   precision: bf16-mixed
