@@ -5,10 +5,12 @@ from typing import Any, Tuple, List, Dict
 import yaml
 from lightning.pytorch import Trainer, LightningModule
 from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import Callback
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+
+torch.backends.cudnn.benchmark = False
 
 def load_model(model: str, **kwargs) -> nn.Module:
     models = {
@@ -82,7 +84,7 @@ if __name__ == '__main__':
         adapt_betas=tuple(cfg.get('adapt_betas', [0.9, 0.999]))
     )
 
-    wandb_logger = WandbLogger(project="graduation_project", log_model="all")
+    wandb_logger = WandbLogger(project="graduation_project", log_model=False)
     trainer = Trainer(
         max_epochs=1,
         accelerator=cfg.get('accelerator', 'auto'),
@@ -92,9 +94,17 @@ if __name__ == '__main__':
         precision=cfg.get('precision', 'bf16-mixed'),
         check_val_every_n_epoch=None,
         val_check_interval=cfg.get('val_interval', 10),
-        accumulate_grad_batches=cfg.get('accumulate_grad_batches', 1)
+        accumulate_grad_batches=cfg.get('accumulate_grad_batches', 1),
+        callbacks=[ModelCheckpoint(
+            monitor="val_loss", 
+            filename="{step}_{val_loss:.3f}",
+            save_last=True, 
+            save_top_k=3, 
+            mode="min", 
+            save_on_train_epoch_end=False,
+        )],
     )
 
     trainer.fit(model=lightning_module, 
                 train_dataloaders=train_dataloader, 
-                val_dataloaders=[val_dataloader])
+                val_dataloaders=val_dataloader)

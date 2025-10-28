@@ -214,15 +214,15 @@ class LitModule(L.LightningModule):
         )
 
         ram_usage = psutil.virtual_memory().used / (1024 ** 3)  # GB
-        self.log('utilization/ram_gb', ram_usage, on_step=True, on_epoch=False, prog_bar=False, logger=True)
+        self.log('system_ram_gb', ram_usage, on_step=True, on_epoch=False, prog_bar=False, logger=True)
 
         if torch.cuda.is_available():
             gpu_memory_allocated = torch.cuda.memory_allocated() / (1024 ** 3)  # GB
             gpu_memory_reserved = torch.cuda.memory_reserved() / (1024 ** 3)    # GB
-            self.log('utilization/memory_allocated_gb', gpu_memory_allocated, on_step=True, on_epoch=False, prog_bar=False, logger=True)
-            self.log('utilization/memory_reserved_gb', gpu_memory_reserved, on_step=True, on_epoch=False, prog_bar=False, logger=True)
+            self.log('vram_allocated_gb', gpu_memory_allocated, on_step=True, on_epoch=False, prog_bar=False, logger=True)
+            self.log('vram_reserved_gb', gpu_memory_reserved, on_step=True, on_epoch=False, prog_bar=False, logger=True)
 
-        self.log('train/loss', loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+        self.log('train_loss', loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
 
         return loss
     
@@ -273,7 +273,7 @@ class LitModule(L.LightningModule):
                 query_heatmaps=query_heatmaps,
             )
 
-            self.log('val/loss', loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+            self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, logger=True, add_dataloader_idx=False)
         
             return loss
 
