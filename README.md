@@ -128,6 +128,11 @@ python -m train.visualize_dataset --outdir ./data_visuals
   * `pycocotools`
   * `wandb`
 
+## Dataset
+
+Dataset used for this project is available at:
+https://drive.google.com/drive/folders/1-_dBLxepIJCjxVqLNrAOWnKNS_0cDEdd?usp=sharing
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
