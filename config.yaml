@@ -27,6 +27,16 @@ dataset:
   output_dir: /home/juheon727/lets_fucking_graduate/dataset/episodes2/
   num_frames: 200
 
+pseudodataset:
+  urls: pseudodataset_urls.yaml
+  output_dir: /home/juheon727/lets_fucking_graduate/pseudodataset/dataset_files/test/
+  lap_var_thresh: 1000
+  clip_prompt: a green football field with players running
+  yolo_prompt: 
+    - white football goalpost with a net on a soccer field
+    - soccer goalpost with net behind goalkeeper on field
+  n_prompt_points: 5
+  
 train:
   dataset_dir_train: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/train/
   dataset_dir_val: /home/juheon727/lets_fucking_graduate/dataset/dataset_files/datasetv1/val/

@@ -7,3 +7,5 @@ lightning_logs/
 wandb/
 graduation_project/
 parameters/
+pseudodataset/dataset_files
+*.pt
