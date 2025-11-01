@@ -168,7 +168,6 @@ def locate_field(img: np.ndarray, base_overlay: np.ndarray, n_points: int = 10, 
     Select k prompt points nearest to the person center in (x,y), then add q more points from the same grid
     that are closest (by L2 distance in RGB color space) to the mean color of the initial k points.
     """
-    # 1) Person detection and center estimation (unchanged logic)
     results_yolo = yolo_model_person.predict(img, conf=0.1)[0].cpu().numpy()
     x_coords, y_coords = [], []
     for box in results_yolo.boxes:
@@ -178,29 +177,24 @@ def locate_field(img: np.ndarray, base_overlay: np.ndarray, n_points: int = 10, 
     x_c = np.array(x_coords).mean() if x_coords else img.shape[1] / 2.0
     y_c = np.array(y_coords).mean() if y_coords else img.shape[0] / 2.0
 
-    # 2) Build a uniform grid over the image
     h, w = img.shape[:2]
     xs = np.linspace(0, w - 1, n_points, dtype=np.float32)
     ys = np.linspace(0, h - 1, n_points, dtype=np.float32)
-    grid_x, grid_y = np.meshgrid(xs, ys)  # (n_points, n_points)
-    grid_pts = np.stack([grid_x.ravel(), grid_y.ravel()], axis=1)  # (N, 2) with (x, y)
+    grid_x, grid_y = np.meshgrid(xs, ys)
+    grid_pts = np.stack([grid_x.ravel(), grid_y.ravel()], axis=1)
     N = grid_pts.shape[0]
 
-    # 3) Initial k by geometric proximity to the detected center
     d2 = (grid_pts[:, 0] - x_c) ** 2 + (grid_pts[:, 1] - y_c) ** 2
     k_clamped = int(min(max(k, 0), N))
     idx_k = np.argpartition(d2, k_clamped - 1)[:k_clamped]
     idx_k = idx_k[np.argsort(d2[idx_k])]
 
-    # 4) Compute mean color of the initial k points (nearest-neighbor sampling in RGB)
-    #    Prepare per-grid-point colors up front for efficiency
     ys_i = np.clip(np.rint(grid_pts[:, 1]).astype(int), 0, h - 1)
     xs_i = np.clip(np.rint(grid_pts[:, 0]).astype(int), 0, w - 1)
-    colors = img[ys_i, xs_i, :].astype(np.float32)  # (N, 3)
+    colors = img[ys_i, xs_i, :].astype(np.float32)
 
     mu_color = colors[idx_k].mean(axis=0) if k_clamped > 0 else colors.mean(axis=0)
 
-    # 5) Among remaining grid points, pick q closest to mu_color by L2 distance in RGB
     mask_remaining = np.ones(N, dtype=bool)
     mask_remaining[idx_k] = False
     remaining_idxs = np.nonzero(mask_remaining)[0]
@@ -208,39 +202,47 @@ def locate_field(img: np.ndarray, base_overlay: np.ndarray, n_points: int = 10, 
 
     if q_clamped > 0:
         diff = colors[remaining_idxs] - mu_color[None, :]
-        dcolor2 = np.einsum('ij,ij->i', diff, diff)  # squared L2 distance
+        dcolor2 = np.einsum('ij,ij->i', diff, diff)
         sel = np.argpartition(dcolor2, q_clamped - 1)[:q_clamped]
         idx_q = remaining_idxs[sel[np.argsort(dcolor2[sel])]]
     else:
         idx_q = np.array([], dtype=int)
 
-    # 6) Concatenate prompts: initial k by geometry + q by color proximity to mean
     idx_all = np.concatenate([idx_k, idx_q], axis=0)
-    prompt_points = grid_pts[idx_all]  # (k+q, 2)
+    prompt_points = grid_pts[idx_all]
     prompt_labels = np.ones(prompt_points.shape[0], dtype=np.int32)
 
-    # 7) Run SAM
     results_sam = sam_model.predict(img, points=prompt_points, labels=prompt_labels)[0].cpu()
 
-    # Initialize overlay safely whether masks exist or not
     overlay_img = base_overlay.copy()
 
     if getattr(results_sam, "masks", None) is not None and hasattr(results_sam.masks, "xy"):
         masks = results_sam.masks.xy
         sam_mask_overlay = np.zeros_like(img, dtype=np.uint8)
+        sam_field_mask = np.zeros(img.shape[:2], dtype=np.uint8)  # ADDED: binary field mask for intersection
         polygons = [np.round(poly).astype(np.int32).reshape(-1, 1, 2) for poly in masks]
         cv2.fillPoly(img=sam_mask_overlay, pts=polygons, color=(255, 0, 0), lineType=cv2.LINE_AA)
+        cv2.fillPoly(sam_field_mask, pts=polygons, color=255)  # ADDED: binary fill of field area
 
-        # Morphological close to fill gaps
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
         sam_mask_overlay = cv2.morphologyEx(sam_mask_overlay, cv2.MORPH_CLOSE, kernel)
+        sam_field_mask = cv2.morphologyEx(sam_field_mask, cv2.MORPH_CLOSE, kernel)  # ADDED: clean binary mask
 
         overlay_img = cv2.addWeighted(base_overlay, 1.0, sam_mask_overlay, 0.5, 0)
 
-    # 8) Draw visualization:
-    #    - All grid points in red
-    #    - Initial k in blue
-    #    - Added q in green
+        # ADDED: fieldline mask = white regions ∩ field (blue) mask
+        hsv_full = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        white_lower = np.array([0, 0, 150], dtype=np.uint8)
+        white_upper = np.array([179, 50, 255], dtype=np.uint8)
+        white_mask = cv2.inRange(hsv_full, white_lower, white_upper)
+
+        fieldline_mask = cv2.bitwise_and(white_mask, sam_field_mask)
+        if np.any(fieldline_mask):
+            fieldline_overlay = np.zeros_like(img, dtype=np.uint8)
+            fieldline_overlay[fieldline_mask > 0] = (0, 0, 255)  # BGR fieldline
+            #overlay_img = cv2.addWeighted(overlay_img, 1.0, fieldline_overlay, 1.0, 0)
+            overlay_img[fieldline_mask > 0] = (0, 0, 255)
+
     for x, y in grid_pts:
         cv2.circle(overlay_img, (int(x), int(y)), 5, (0, 0, 255), -1)
 
@@ -252,6 +254,7 @@ def locate_field(img: np.ndarray, base_overlay: np.ndarray, n_points: int = 10, 
             cv2.circle(overlay_img, (int(x), int(y)), 5, (0, 255, 0), -1)
 
     return overlay_img
+
 
 
 def download_frames(url: str, n: int, dir: str, idx: int, lap_var_thresh: float, clip_prompt: str, n_points: int) -> None:
